@@ -4,72 +4,50 @@ import numpy as np
 import tempfile
 import os
 import json
-import acoustid
-import musicbrainzngs
-import requests
+import asyncio
+from shazamio import Shazam
 
-# Credenciales de AcoustID y MusicBrainz
-ACOUSTID_KEY = 'jWlWqRztOh'
-
-musicbrainzngs.set_useragent(
-    "AnalizadorDJ_App", 
-    "1.0", 
-    "https://metabrainz.org/profile" 
-)
-
-# Configuración de la página
 st.set_page_config(page_title="DJ Analyzer", page_icon="🎧")
 st.title("🎧 Track Analyzer")
 st.write("Upload a song to get BPM, title, and cover.")
+
+async def buscar_track(ruta):
+    shazam = Shazam()
+    return await shazam.recognize_song(ruta)
 
 archivo_subido = st.file_uploader("Upload MP3 or WAV", type=["mp3", "wav"])
 
 if archivo_subido is not None:
     st.audio(archivo_subido)
     
-    with st.spinner("Analyzing audio and searching database..."):
+    with st.spinner("Analyzing audio..."):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
             temp_file.write(archivo_subido.read())
             ruta_temp = temp_file.name
 
         try:
-            # --- PARTE 1: Librosa (BPM) ---
+            # 1. LIBROSA (BPM)
             y, sr = librosa.load(ruta_temp, sr=None)
             tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
             bpm = tempo[0] if isinstance(tempo, np.ndarray) else tempo
-
-            # --- PARTE 2: Búsqueda en MusicBrainz ---
-            resultados = acoustid.match(ACOUSTID_KEY, ruta_temp)
             
-            encontrado = False
+            # 2. SHAZAMIO
+            resultado_shazam = asyncio.run(buscar_track(ruta_temp))
+            
             titulo = "Unknown"
             artista = "Unknown"
             imagen_url = None
+            encontrado = False
+            
+            if 'track' in resultado_shazam:
+                encontrado = True
+                track_info = resultado_shazam['track']
+                titulo = track_info.get('title', 'Unknown')
+                artista = track_info.get('subtitle', 'Unknown')
+                imagen_url = track_info.get('images', {}).get('coverart')
 
-            for score, recording_id, title, artist in resultados:
-                if score > 0.1:  # Exigencia baja para que reconozca más temas
-                    encontrado = True
-                    titulo = title
-                    artista = artist
-                    
-                    try:
-                        mb_data = musicbrainzngs.get_recording_by_id(recording_id, includes=["releases"])
-                        releases = mb_data.get('recording', {}).get('release-list', [])
-                        
-                        if releases:
-                            release_id = releases[0]['id']
-                            imagen_url = f"https://coverartarchive.org/release/{release_id}/front"
-                            
-                            r = requests.head(imagen_url)
-                            if r.status_code != 200:
-                                imagen_url = None
-                    except Exception:
-                        pass
-                    
-                    break
-
-            # --- PARTE 3: Mostrar en pantalla ---
-            st.success("Success!")
+            # 3. INTERFAZ GRÁFICA
+            st.success("Done!")
             col1, col2 = st.columns([1, 2])
             
             with col1:
@@ -83,9 +61,9 @@ if archivo_subido is not None:
                 st.write(f"**Artist:** {artista}")
                 st.metric(label="BPM", value=round(float(bpm), 2))
                 if encontrado:
-                    st.caption("✅ Verified by MetaBrainz")
+                    st.caption("✅ Verified by Shazam")
 
-            # --- PARTE 4: Botón de descarga actualizado ---
+            # 4. DESCARGA DEL JSON
             datos = {
                 "bpm": float(bpm), 
                 "title": titulo, 
@@ -100,8 +78,6 @@ if archivo_subido is not None:
                 mime="application/json"
             )
 
-        except acoustid.NoBackendError:
-            st.error("🚨 ERROR: 'fpcalc' is missing.")
         except Exception as e:
             st.error(f"Error: {e}")
         finally:

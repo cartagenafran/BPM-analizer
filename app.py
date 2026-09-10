@@ -6,8 +6,8 @@ import os
 import json
 
 st.set_page_config(page_title="BPM Analyzer", page_icon="🎵")
-st.title("🎵 BPM Analyzer")
-st.write("Upload a song to get its BPM.")
+st.title("BPM Analyzer")
+st.write("Drag a song to get its BPM.")
 
 archivo_subido = st.file_uploader("Upload MP3 or WAV", type=["mp3", "wav"])
 

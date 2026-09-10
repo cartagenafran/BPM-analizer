@@ -1,6 +1,4 @@
 streamlit
 librosa
 numpy
-pyacoustid
-musicbrainzngs
-requests
+shazamio
